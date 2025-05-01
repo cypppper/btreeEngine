@@ -13,12 +13,12 @@
 #include "src/status/status.h"
 #include "src/btree_index/btree_page.h"
 
-template <typename KeyT, typename ValueT>
-struct SplitInfo {
-public:
-    SplitInfo() = default;
-    int new_page_id;
-    std::pair<KeyT, ValueT> mid_elem;
+
+
+
+enum class LeafCase: int {
+    SplitPage,
+    OK,
 };
 
 template <typename KeyT, typename ValueT, typename KeyComparatorT>
@@ -37,7 +37,7 @@ public:
 
     void Init() noexcept;
 
-    auto Insert(const KeyT& key, const ValueT& value, std::shared_ptr<LeafSplitInfo>& split_info) -> Status;
+    auto Insert(const KeyT& key, const ValueT& value, std::shared_ptr<LeafSplitInfo>& split_info) -> StatusOr<LeafCase>;
     auto Insert(const KeyT& key, const ValueT& value) -> Status;
     auto Update(const KeyT& key, const ValueT& value) -> Status;
     auto get(const KeyT& key) const -> StatusOr<ValueT>;
@@ -58,7 +58,7 @@ void LeafPage<KeyT, ValueT, KeyComparatorT>::Init() noexcept {
 
 
 LEAF_TEMPLATE_ARGUMENTS
-auto LeafPage<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const ValueT& value, std::shared_ptr<LeafSplitInfo>& split_info) -> Status {
+auto LeafPage<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const ValueT& value, std::shared_ptr<LeafSplitInfo>& split_info) -> StatusOr<LeafCase> {
     /*
         insert kv into page
         1. find position to insert
@@ -72,7 +72,7 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const Value
     auto const start_ite = std::begin(keys);
     auto const ge_ite = std::lower_bound(start_ite, end_ite, key, KeyComparatorT{});
     auto new_idx = std::distance(start_ite, ge_ite);
-    std::cout << new_idx<< std::endl;
+
     // 2. memmove
     std::copy_backward(
         ge_ite,
@@ -90,7 +90,7 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const Value
     // 3. check whethre reaching max
     ChangeSizeBy(1);
     if (GetSize() < GetMaxSize()) {
-        return {};
+        return {LeafCase::OK};
     }
 
 
@@ -99,7 +99,7 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const Value
     auto& new_leaf_page = *reinterpret_cast<SelfT*>(new_page->data());
     new_leaf_page.Init();
 
-    split_info = std::make_shared<LeafSplitInfo>(LeafSplitInfo{});
+    assert(split_info.get() != nullptr);
     split_info->new_page_id = new_leaf_page.GetPageId();
     auto mid_pos = GetMinSize();
     split_info->mid_elem = std::pair<KeyT, ValueT> {
@@ -113,7 +113,7 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const Value
     std::copy(std::begin(this->vals) + mid_pos + 1, std::begin(this->vals) + GetSize(), std::begin(new_vals));
     new_leaf_page.SetSize(GetSize() - GetMinSize() - 1);
     this->SetSize(GetMinSize());
-    return {make_exception<DoSplitException>()};
+    return {LeafCase::SplitPage};
 }
 
 LEAF_TEMPLATE_ARGUMENTS

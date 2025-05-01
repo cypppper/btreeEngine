@@ -2,4 +2,4 @@
 
 const char* OutofSpaceException::message = "OutOfSpace";
 const char* KeyNotFoundException::message = "KeyNotFound";
-const char* DoSplitException::message = "DoSplit";
+const char* KeyDuplicateException::message = "KeyDuplicate";

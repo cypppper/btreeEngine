@@ -5,6 +5,7 @@
 #include <string>
 #include <utility>
 #include <iostream>
+#include <cassert>
 
 #include "src/btree_index/common.h"
 #include "src/status/status.h"
@@ -13,6 +14,7 @@
 enum class InternalCase: int {
     KeyFound,
     ChildPageId,
+    InsertSplit,
     OK,
 };
 
@@ -20,8 +22,9 @@ INTERNAL_TEMPLATE_ARGUMENTS
 class InternalPage: public BTreePage {
     static size_t constexpr SLOT_CNT = PAGE_SLOT_CNT_CALC<sizeof(KeyT) + sizeof(ValueT), sizeof(PidT)>;
     using LeafT = LeafPage<KeyT, ValueT, KeyComparatorT>;
-    using InternalT = InternalPage<KeyT, ValueT, int, KeyComparatorT>;
+    using SelfT = InternalPage<KeyT, ValueT, PidT, KeyComparatorT>;
     using PairT = std::pair<KeyT, ValueT>;
+    using InternalSplitInfoT = SplitInfo<KeyT, ValueT>;
 
     struct PairComparator {
     public:
@@ -43,9 +46,11 @@ public:
 
     void SetInitialState(PairT first_kv, PidT pid1, PidT pid2) noexcept;
 
-    auto Insert(const KeyT& key, const ValueT& value, const PidT& pid) -> Status;
+    auto Insert(const KeyT& key, const ValueT& value, const PidT& pid, std::shared_ptr<InternalSplitInfoT>& split_info) -> StatusOr<InternalCase>;
 
     auto Get(const KeyT& key, ValueT& res, PidT& child_pid) const -> StatusOr<InternalCase>;
+
+    auto GetChildPid(const KeyT& key) const -> StatusOr<PidT>;
 
     auto dump_struct() const -> std::string;
 
@@ -67,7 +72,7 @@ void InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::Init() noexcept {
 }
 
 INTERNAL_TEMPLATE_ARGUMENTS
-auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::Insert(const KeyT& key, const ValueT& value, const PidT& pid) -> Status {
+auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::Insert(const KeyT& key, const ValueT& value, const PidT& pid, std::shared_ptr<InternalSplitInfoT>& split_info) -> StatusOr<InternalCase> {
     /*
         insert kv into page
         1. find position to insert
@@ -98,11 +103,33 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::Insert(const KeyT& key, c
     this->pids[new_idx] = pid;
     // 3. check whethre reaching max
     ChangeSizeBy(1);
-    if (GetSize() == GetMaxSize()) {
-        // TODO: SPLIT
-        return {make_exception<OutofSpaceException>()};
+    if (GetSize() < GetMaxSize()) {
+        return {InternalCase::OK};        
     }
-    return {};
+
+    auto new_page = RawPageMgr::create();
+    auto& new_inner_page = *reinterpret_cast<SelfT*>(new_page->data());
+    new_inner_page.Init();
+    assert(split_info.get() != nullptr);
+    split_info->new_page_id = new_inner_page.GetPageId();
+    auto mid_pos = GetMinSize();
+    split_info->mid_elem = this->pairs[mid_pos];
+
+    auto& new_pairs = new_inner_page.pairs;
+    auto& new_pids = new_inner_page.pids;
+    std::copy(
+        std::begin(this->pairs) + mid_pos + 1, 
+        std::begin(this->pairs) + GetSize(), 
+        std::begin(new_pairs) + 1
+    );
+    std::copy(
+        std::begin(this->pids) + mid_pos, 
+        std::begin(this->pids) + GetSize(), 
+        std::begin(new_pids)
+    );
+    new_inner_page.SetSize(GetSize() - GetMinSize());
+    this->SetSize(GetMinSize());
+    return {InternalCase::InsertSplit};
 }
 
 
@@ -166,9 +193,45 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::dump_struct() const -> st
             auto btree_page = reinterpret_cast<LeafT*>(page->data());
             ret += btree_page->dump_struct();
         } else {
-            auto btree_page = reinterpret_cast<InternalT*>(page->data());
+            auto btree_page = reinterpret_cast<SelfT*>(page->data());
             ret += btree_page->dump_struct();
         }
     }
     return ret;
 }
+
+INTERNAL_TEMPLATE_ARGUMENTS
+auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::GetChildPid(const KeyT& key) const -> StatusOr<PidT> {
+    /*
+        assert key not exist in elements in this->pairs
+        1. find slot whose key >= search_key
+        2. check duplicate (assert not duplicate)
+        3. return pid[pos-1]
+    */
+    // 1. find slot whose key >= search_key
+    auto const end_ite = std::begin(pairs) + GetSize();
+    auto const start_ite = std::begin(pairs);  // first is begin() + 1
+    
+    auto search_pair = std::pair<KeyT, ValueT>{key, ValueT{}};
+    auto ge_ite = std::lower_bound(start_ite + 1, end_ite, search_pair, PairComparatorT{});
+    auto new_idx = std::distance(start_ite, ge_ite);
+
+    // 2. check duplicate (assert not duplicate)
+    if (ge_ite == end_ite) {
+        // can not defer ge_ite
+        auto pos_idx = new_idx - 1;
+        auto pid = this->pids[pos_idx];
+        return {pid};
+    }
+
+    if (PairComparatorT{}(*ge_ite, search_pair) == 0) {
+        // search_key == *ge_ite.key -> key duplicate
+        return {make_exception<KeyDuplicateException>()};
+    }
+
+    // 3. return pid[pos-1]
+    auto pos_idx = new_idx - 1;
+    auto pid = this->pids[pos_idx];
+    return {pid};
+}
+
