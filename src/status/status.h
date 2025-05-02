@@ -23,7 +23,6 @@ struct StatusOrVisitor {
             [](const T& t) { return true; },
             [](const std::unique_ptr<std::exception>& except) { return false; }
         }, var);
-
         return ret;
     }
 };

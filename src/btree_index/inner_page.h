@@ -13,7 +13,8 @@
 
 enum class InternalCase: int {
     KeyFound,
-    ChildPageId,
+    GetChildPageId,
+    GetValue,
     InsertSplit,
     OK,
 };
@@ -26,18 +27,28 @@ class InternalPage: public BTreePage {
     using PairT = std::pair<KeyT, ValueT>;
     using InternalSplitInfoT = SplitInfo<KeyT, ValueT>;
 
+
+    struct PairComparatorLowerBound {
+    public:
+        PairComparatorLowerBound() = default;
+        
+        auto operator()(const PairT& a, const PairT& b) -> bool {
+            auto key_cmpor = KeyComparatorT{};
+            return key_cmpor(a.first, b.first) < 0;
+        }
+    };
+
     struct PairComparator {
     public:
         PairComparator() = default;
         
         auto operator()(const PairT& a, const PairT& b) -> int {
             auto key_cmpor = KeyComparatorT{};
-            std::cout << "[comparator] " << a.first << " " << b.first << std::endl;
-            return key_cmpor(a.first, b.first);
+            return (int)key_cmpor(a.first, b.first);
         }
     };
-
-    using PairComparatorT = PairComparator;
+    using PairLowerBoundCmpT = PairComparatorLowerBound;
+    using PairThreeWayCmpT = PairComparator;
 public:
     InternalPage() = delete;
     InternalPage(const InternalPage& other) = delete;
@@ -48,9 +59,11 @@ public:
 
     auto Insert(const KeyT& key, const ValueT& value, const PidT& pid, std::shared_ptr<InternalSplitInfoT>& split_info) -> StatusOr<InternalCase>;
 
-    auto Get(const KeyT& key, ValueT& res, PidT& child_pid) const -> StatusOr<InternalCase>;
+    auto NoExceptGet(const KeyT& key, ValueT& res, PidT& child_pid) const -> StatusOr<InternalCase>;
 
     auto GetChildPid(const KeyT& key) const -> StatusOr<PidT>;
+
+    auto DoUpdateOrGetChild(const KeyT& key, const ValueT& new_val, PidT& child_pid) -> StatusOr<InternalCase>;
 
     auto dump_struct() const -> std::string;
 
@@ -85,7 +98,7 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::Insert(const KeyT& key, c
     auto new_pair = std::pair<KeyT, ValueT>{key, value};
     auto end_ite = std::begin(pairs) + GetSize();
     auto start_ite = std::begin(pairs);
-    auto ge_ite = std::lower_bound(start_ite + 1, end_ite, new_pair, PairComparatorT{});
+    auto ge_ite = std::lower_bound(start_ite + 1, end_ite, new_pair, PairLowerBoundCmpT{});
     auto new_idx = std::distance(start_ite, ge_ite);
     // 2. memmove
     std::copy_backward(
@@ -134,7 +147,7 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::Insert(const KeyT& key, c
 
 
 INTERNAL_TEMPLATE_ARGUMENTS
-auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::Get(const KeyT& key, ValueT& res, PidT& child_pid) const -> StatusOr<InternalCase>{
+auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::NoExceptGet(const KeyT& key, ValueT& res, PidT& child_pid) const -> StatusOr<InternalCase>{
     /*
         get value of given key in page
         1. find pos of key
@@ -146,31 +159,33 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::Get(const KeyT& key, Valu
     auto start_ite = std::begin(pairs);  // first is begin() + 1
     
     auto search_pair = std::pair<KeyT, ValueT>{key, ValueT{}};
-    auto ge_ite = std::lower_bound(start_ite + 1, end_ite, search_pair, PairComparatorT{});
+    auto ge_ite = std::lower_bound(start_ite + 1, end_ite, search_pair, PairLowerBoundCmpT{});
     auto new_idx = std::distance(start_ite, ge_ite);
 
     // 2. if equal, return value
+
+    // all keys < search_key
     if (ge_ite == end_ite) {
         // can not defer ge_ite
         auto pos_idx = new_idx - 1;
         auto pid = this->pids[pos_idx];
         child_pid = pid;
-        return {InternalCase::ChildPageId};
+        return {InternalCase::GetChildPageId};
     }
 
-    if (PairComparatorT{}(*ge_ite, search_pair) == 0) {
+    if (PairThreeWayCmpT{}(*ge_ite, search_pair) == 0) {
         // search_key == *ge_ite.key -> return value
         auto pos_idx = new_idx;
         auto& pair = this->pairs[pos_idx];
         res = pair.second;
-        return {InternalCase::OK};
+        return {InternalCase::GetValue};
     }
 
     // search_key < *ge_ite -> return child_page_id
     auto pos_idx = new_idx - 1;
     auto pid = this->pids[pos_idx];
     child_pid = pid;
-    return {InternalCase::ChildPageId};
+    return {InternalCase::GetChildPageId};
 }
 
 INTERNAL_TEMPLATE_ARGUMENTS
@@ -184,17 +199,31 @@ void InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::SetInitialState(PairT fir
 INTERNAL_TEMPLATE_ARGUMENTS
 auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::dump_struct() const -> std::string {
     std::string ret{};
+    ret += std::format("------------------- [INNER] page pid: {} -----------------\n", GetPageId());
+    ret += "children pid: ";
     for (int i = 0; i < GetSize(); i++) {
-        ret += std::format("key: {}, ", this->pairs[i].first)
-            += std::format("child: {}\n", i);
+        ret += std::format("{}, ", this->pids[i]);
+    }
+    ret += "\n";
+    ret += "values: ";
+    for (int i = 0; i < GetSize(); i++) {
+        ret += std::format("{}, ", this->pairs[i].second.dump_struct());
+    }
+    ret += "\n";
+    for (int i = 0; i < GetSize(); i++) {
+        ret += std::format("[Inner] key: {}, ", this->pairs[i].first)
+            += std::format("child: {} pid: {} ", i, this->pids[i]);
         auto pid = this->pids[i];
         auto page = RawPageMgr::get_page(pid);
         if (CheckIsLeafPage(page)) {
+            ret += "[Inner] Child Is LEAF!\n";
             auto btree_page = reinterpret_cast<LeafT*>(page->data());
             ret += btree_page->dump_struct();
         } else {
+            ret += "[Inner] Child Is INNER!!\n";
             auto btree_page = reinterpret_cast<SelfT*>(page->data());
             ret += btree_page->dump_struct();
+            ret += "[Inner] Child end!\n";
         }
     }
     return ret;
@@ -213,7 +242,7 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::GetChildPid(const KeyT& k
     auto const start_ite = std::begin(pairs);  // first is begin() + 1
     
     auto search_pair = std::pair<KeyT, ValueT>{key, ValueT{}};
-    auto ge_ite = std::lower_bound(start_ite + 1, end_ite, search_pair, PairComparatorT{});
+    auto ge_ite = std::lower_bound(start_ite + 1, end_ite, search_pair, PairLowerBoundCmpT{});
     auto new_idx = std::distance(start_ite, ge_ite);
 
     // 2. check duplicate (assert not duplicate)
@@ -224,7 +253,7 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::GetChildPid(const KeyT& k
         return {pid};
     }
 
-    if (PairComparatorT{}(*ge_ite, search_pair) == 0) {
+    if (PairThreeWayCmpT{}(*ge_ite, search_pair) == 0) {
         // search_key == *ge_ite.key -> key duplicate
         return {make_exception<KeyDuplicateException>()};
     }
@@ -233,5 +262,49 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::GetChildPid(const KeyT& k
     auto pos_idx = new_idx - 1;
     auto pid = this->pids[pos_idx];
     return {pid};
+}
+
+
+INTERNAL_TEMPLATE_ARGUMENTS
+auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::DoUpdateOrGetChild(const KeyT& key, const ValueT& new_val, PidT& child_pid) -> StatusOr<InternalCase> {
+    /*
+        get value of given key in page
+        1. find pos of key
+        2. if equal, return value
+        3. return child page id
+    */
+    // 1. find pos to update
+    auto end_ite = std::begin(pairs) + GetSize();
+    auto start_ite = std::begin(pairs);  // first is begin() + 1
+    
+    auto search_pair = std::pair<KeyT, ValueT>{key, ValueT{}};
+    auto ge_ite = std::lower_bound(start_ite + 1, end_ite, search_pair, PairLowerBoundCmpT{});
+    auto new_idx = std::distance(start_ite, ge_ite);
+
+    // 2. if equal, return value
+
+    // all keys < search_key
+    if (ge_ite == end_ite) {
+        // can not defer ge_ite
+        auto pos_idx = new_idx - 1;
+        auto pid = this->pids[pos_idx];
+        child_pid = pid;
+        return {InternalCase::GetChildPageId};
+    }
+
+    if (PairThreeWayCmpT{}(*ge_ite, search_pair) == 0) {
+        // search_key == *ge_ite.key -> return value
+        auto pos_idx = new_idx;
+        auto& pair = this->pairs[pos_idx];
+        pair.second = new_val;
+        std::cout << std::format("[internal update] find key in internal page pid:{} ge_ite: {}, search_pair: {}\n", GetPageId(), ge_ite->first, search_pair.first);
+        return {InternalCase::OK};
+    }
+
+    // search_key < *ge_ite -> return child_page_id
+    auto pos_idx = new_idx - 1;
+    auto pid = this->pids[pos_idx];
+    child_pid = pid;
+    return {InternalCase::GetChildPageId};
 }
 

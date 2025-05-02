@@ -18,6 +18,7 @@
 
 enum class LeafCase: int {
     SplitPage,
+    KeyNotFound,
     OK,
 };
 
@@ -26,6 +27,14 @@ class LeafPage: public BTreePage {
     static size_t constexpr SLOT_CNT = PAGE_SLOT_CNT_CALC<sizeof(KeyT), sizeof(ValueT)>;
     using SelfT = LeafPage<KeyT, ValueT, KeyComparatorT>;
     using LeafSplitInfo = SplitInfo<KeyT, ValueT>;
+    struct KeyLowerBoundComparator {
+        auto operator()(const KeyT& a, const KeyT& b) -> bool {
+            KeyComparatorT cmper{};
+            return cmper(a, b) < 0;
+        }
+    };
+    using KeyLowerBoundCmpT = KeyLowerBoundComparator;
+    using KeyThreeWayCmpT = KeyComparatorT;
 private:
     std::array<KeyT, SLOT_CNT> keys;
     std::array<ValueT, SLOT_CNT> vals;
@@ -38,8 +47,7 @@ public:
     void Init() noexcept;
 
     auto Insert(const KeyT& key, const ValueT& value, std::shared_ptr<LeafSplitInfo>& split_info) -> StatusOr<LeafCase>;
-    auto Insert(const KeyT& key, const ValueT& value) -> Status;
-    auto Update(const KeyT& key, const ValueT& value) -> Status;
+    auto Update(const KeyT& key, const ValueT& value) -> StatusOr<LeafCase>;
     auto get(const KeyT& key) const -> StatusOr<ValueT>;
     auto remove(const KeyT& key) -> StatusOr<ValueT>;
     auto dump_struct() const -> std::string;
@@ -70,7 +78,7 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const Value
     // 1. find pos to insert
     auto const end_ite = std::begin(keys) + GetSize();
     auto const start_ite = std::begin(keys);
-    auto const ge_ite = std::lower_bound(start_ite, end_ite, key, KeyComparatorT{});
+    auto const ge_ite = std::lower_bound(start_ite, end_ite, key, KeyLowerBoundCmpT{});
     auto new_idx = std::distance(start_ite, ge_ite);
 
     // 2. memmove
@@ -116,18 +124,10 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const Value
     return {LeafCase::SplitPage};
 }
 
-LEAF_TEMPLATE_ARGUMENTS
-auto LeafPage<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const ValueT& value) -> Status {
-    auto info = std::shared_ptr<LeafSplitInfo>{};
-    auto ret = this->Insert(key, value, info);
-    if (!ret.Ok()) {
-        std::cout << "receive info" << std::format("mid elem key: {}, new page id: {}\n", info->mid_elem.first, info->new_page_id);
-    }
-    return ret;
-}
+
 
 LEAF_TEMPLATE_ARGUMENTS
-auto LeafPage<KeyT, ValueT, KeyComparatorT>::Update(const KeyT& key, const ValueT& value) -> Status {
+auto LeafPage<KeyT, ValueT, KeyComparatorT>::Update(const KeyT& key, const ValueT& value) -> StatusOr<LeafCase> {
     /*
         update kv in page
         1. find position to update
@@ -138,20 +138,21 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Update(const KeyT& key, const Value
     // 1. find pos to update
     auto end_ite = std::begin(keys) + GetSize();
     auto start_ite = std::begin(keys);
-    auto ge_ite = std::lower_bound(start_ite, end_ite, key, KeyComparatorT{});
+    auto ge_ite = std::lower_bound(start_ite, end_ite, key, KeyLowerBoundCmpT{});
     auto new_idx = std::distance(start_ite, ge_ite);
 
     // 2. if not exist, return KeyNotFound
     if (ge_ite == end_ite) {
         // no key in leaf page >= key
-        return {make_exception<KeyNotFoundException>()};
-    } else if (KeyComparatorT{}(*ge_ite, key) != 0) {
-        return {make_exception<KeyNotFoundException>()};
+        return {LeafCase::KeyNotFound};
+    } else if (KeyThreeWayCmpT{}(*ge_ite, key) != 0) {
+        return {LeafCase::KeyNotFound};
     }
 
     // 3. change value at this pos
     this->vals[new_idx] = value;
-    return {};
+    std::cout << "[update in leaf] new value: " << this->vals[new_idx].dump_struct() << std::endl;
+    return {LeafCase::OK};
 }
 
 LEAF_TEMPLATE_ARGUMENTS
@@ -165,14 +166,14 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::get(const KeyT& key) const -> Statu
     // 1. find pos to update
     auto end_ite = std::begin(keys) + GetSize();
     auto start_ite = std::begin(keys);
-    auto ge_ite = std::lower_bound(start_ite, end_ite, key, KeyComparatorT{});
+    auto ge_ite = std::lower_bound(start_ite, end_ite, key, KeyLowerBoundCmpT{});
     auto new_idx = std::distance(start_ite, ge_ite);
 
     // 2. if not exist, return KeyNotFound
     if (ge_ite == end_ite) {
         // no key in leaf page >= key
         return {make_exception<KeyNotFoundException>()};
-    } else if (KeyComparatorT{}(*ge_ite, key) != 0) {
+    } else if (KeyThreeWayCmpT{}(*ge_ite, key) != 0) {
         return {make_exception<KeyNotFoundException>()};
     }
 
@@ -194,14 +195,14 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::remove(const KeyT& key) -> StatusOr
     // 1. find pos of key
     auto end_ite = std::begin(keys) + GetSize();
     auto start_ite = std::begin(keys);
-    auto ge_ite = std::lower_bound(start_ite, end_ite, key, KeyComparatorT{});
+    auto ge_ite = std::lower_bound(start_ite, end_ite, key, KeyLowerBoundCmpT{});
     auto new_idx = std::distance(start_ite, ge_ite);
     
     // 2. if not exist return KeyNotFound
     if (ge_ite == end_ite) {
         // no key in leaf page >= key
         return {make_exception<KeyNotFoundException>()};
-    } else if (KeyComparatorT{}(*ge_ite, key) != 0) {
+    } else if (KeyThreeWayCmpT{}(*ge_ite, key) != 0) {
         return {make_exception<KeyNotFoundException>()};
     }
 
@@ -242,7 +243,7 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::dump_struct() const -> std::string 
                         (void*)this, (void*)&this->keys[0], (void*)&this->vals[0], (void*)((char*)this + sizeof(*this))
                     );
     for (int i = 0; i < GetSize(); i++) {
-        ret += std::format("key: {}, val: {}\n", this->keys[i], 0);
+        ret += std::format("key: {}, val: {}\n", this->keys[i], this->vals[i].dump_struct());
     }
     return ret;
 }
