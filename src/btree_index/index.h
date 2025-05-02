@@ -2,9 +2,9 @@
 
 #include "common.h"
 #include "inner_page.h"
-#include "src/status/status.h"
-#include "src/btree_index/btree_page.h"
-#include "src/btree_index/leaf_page.h"
+#include "../status/status.h"
+#include "btree_page.h"
+#include "leaf_page.h"
 
 #include <cstddef>
 #include <iostream>
@@ -209,7 +209,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::InsertFromInternal(std::shared_ptr<Pag
 
 INDEX_TEMPLATE_ARGUMENTS
 auto Index<KeyT, ValueT, KeyComparatorT>::Update(const KeyT& key, const ValueT& new_val) -> Status {
-    std::cout << "root addr: " << (void *)this->root.get() << std::endl;
+    // std::cout << "root addr: " << (void *)this->root.get() << std::endl;
     if (CheckIsLeafPage(this->root)) {
         auto& leaf_root = GetLeaf(this->root);
         auto leaf_split_info = std::make_shared<LeafSplitInfoT>();
@@ -242,9 +242,9 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Update(const KeyT& key, const ValueT& 
         if (internal_update_res.Ok()) {
             auto iucase =internal_update_res.Unwrap();
             if (iucase == IndexCase::Ok) {
-                std::cout << "root is internal! update ok\n";
+                // std::cout << "root is internal! update ok\n";
             } else if (iucase == IndexCase::KeyNotFound) {
-                std::cout << std::format("root is internal! KeyNotFound\n");
+                // std::cout << std::format("root is internal! KeyNotFound\n");
             } else {
                 std::cout << "should not reach here\n";
                 assert(false);

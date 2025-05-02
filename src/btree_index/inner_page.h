@@ -8,9 +8,10 @@
 #include <iostream>
 #include <cassert>
 
-#include "src/btree_index/common.h"
-#include "src/status/status.h"
-#include "src/btree_index/btree_page.h"
+#include "common.h"
+#include "btree_page.h"
+#include "../status/status.h"
+
 
 enum class InternalCase: int {
     KeyFound,
@@ -364,7 +365,7 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::DoUpdateOrGetChild(const 
         auto pos_idx = new_idx;
         auto& pair = this->pairs[pos_idx];
         pair.second = new_val;
-        std::cout << std::format("[internal update] find key in internal page pid:{} ge_ite: {}, search_pair: {}\n", GetPageId(), ge_ite->first, search_pair.first);
+        // std::cout << std::format("[internal update] find key in internal page pid:{} ge_ite: {}, search_pair: {}\n", GetPageId(), ge_ite->first, search_pair.first);
         return {InternalCase::OK};
     }
 

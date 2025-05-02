@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <utility>
+#include <memory>
 
 const size_t BTREE_PAGE_SIZE = 4096;
 const size_t LEAF_PAGE_HEADER_SIZE = 16;

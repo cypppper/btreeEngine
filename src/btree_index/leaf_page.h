@@ -9,9 +9,9 @@
 #include <iostream>
 
 
-#include "src/btree_index/common.h"
-#include "src/status/status.h"
-#include "src/btree_index/btree_page.h"
+#include "common.h"
+#include "../status/status.h"
+#include "btree_page.h"
 
 
 
@@ -163,7 +163,7 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Update(const KeyT& key, const Value
 
     // 3. change value at this pos
     this->vals[new_idx] = value;
-    std::cout << "[update in leaf] new value: " << this->vals[new_idx].dump_struct() << std::endl;
+    // std::cout << "[update in leaf] new value: " << this->vals[new_idx].dump_struct() << std::endl;
     return {LeafCase::OK};
 }
 

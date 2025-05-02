@@ -2,7 +2,7 @@
 
 #include <vector>
 #include <unordered_map>
-#include "src/btree_index/common.h"
+#include "common.h"
 
 INTERNAL_TEMPLATE_ARGUMENTS
 class InternalPage;

@@ -1,4 +1,4 @@
-#include "src/btree_index/btree_page.h"
+#include "btree_page.h"
 
 std::unordered_map<int, std::shared_ptr<Page>> RawPageMgr::pages_map = {};
 int RawPageMgr::next_page_id = 0;

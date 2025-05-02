@@ -1,36 +1,38 @@
-#include <__compare/compare_three_way.h>
 #include <algorithm>
 #include <iostream>
 #include <cstddef>
 #include <compare>
+#include <cassert>
 #include "src/btree_index/index.h"
 #include "src/format/custom_struct.h"
 using namespace std;
 
 int main() {
-    /* idx */
+    cout << "Running Checks On Btree Index...\n";
     auto idx = Index<int, TestStructA, IntThreeWayCmper>::create();
     for (int i = 0; i < 400; i++) {
-        // cout << "insert : " << i << endl;
         auto ret = idx->Insert(i, TestStructA{});
-        // cout << "end insert : " << i << endl;
+        assert(ret.Ok());
     }
 
     for (int i = 0; i < 400; i++) {
-        // cout << "update : " << i << endl;
         auto new_val = TestStructA{};
         new_val.a = {'h', 'a', 'h', 'a', '\0'};
         auto ret = idx->Update(i, new_val);
-        // cout << "end update : " << i << endl;
+        assert(ret.Ok());
     }
 
     for (int i = 0; i < 400; i++) {
-        // cout << "update : " << i << endl;
         auto ret = idx->Get(i);
-        cout << std::format("get result of i : {} ==== {}\n", i, ret.Unwrap()->dump_struct());
-        // cout << "end update : " << i << endl;
+        auto result = ret.Unwrap();
+        assert(result->a[0] == 'h');
+        assert(result->a[1] == 'a');
+        assert(result->a[2] == 'h');
+        assert(result->a[3] == 'a');
+        assert(result->a[4] == '\0');
     }
+    // cout << idx->dump_struct() << endl;
 
-    cout << idx->dump_struct() << endl;
+    cout << "All Check Passed!" << endl;
 }
 
