@@ -8,7 +8,7 @@
 using namespace std;
 
 int main() {
-    cout << "Running Checks On Btree Index...\n";
+    cout << "\n\nRunning Checks On Btree Index...\n";
     auto idx = Index<int, TestStructA, IntThreeWayCmper>::create();
     for (int i = 0; i < 400; i++) {
         auto ret = idx->Insert(i, TestStructA{});
