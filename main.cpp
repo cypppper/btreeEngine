@@ -7,8 +7,6 @@
 #include "src/format/custom_struct.h"
 using namespace std;
 
-
-
 int main() {
     /* idx */
     auto idx = Index<int, TestStructA, IntThreeWayCmper>::create();
@@ -26,13 +24,13 @@ int main() {
         // cout << "end update : " << i << endl;
     }
 
+    for (int i = 0; i < 400; i++) {
+        // cout << "update : " << i << endl;
+        auto ret = idx->Get(i);
+        cout << std::format("get result of i : {} ==== {}\n", i, ret.Unwrap()->dump_struct());
+        // cout << "end update : " << i << endl;
+    }
+
     cout << idx->dump_struct() << endl;
-
-    /* internal page */
-
-    // auto raw_page = RawPageMgr::create();
-    // auto &page = *reinterpret_cast< InternalPage<int, B, int, std::less<int>> *>(raw_page->data());
-    // page.Init();
-
-    // cout << page.dump_struct() << endl;
 }
+

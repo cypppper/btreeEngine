@@ -66,7 +66,7 @@ public:
 template<typename T>
 class StatusBase{
     virtual bool Ok() = 0;
-    virtual T unwrap() = 0;
+    virtual T Unwrap() = 0;
 };
 
 template<typename T> 
@@ -77,7 +77,7 @@ public:
     bool Ok() override {
         return visitor::StatusOrVisitor::Ok(this->result);
     }
-    T unwrap() override {
+    T Unwrap() override {
         if (Ok()) {
             return std::get<T>(this->result);
         } else {
