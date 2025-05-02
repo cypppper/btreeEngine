@@ -13,6 +13,8 @@ A Btree Index Storage Engine is a simple storage engine that uses a Btree to sto
     - MacOS
     - Linux
 
-Build & Run:
-    ./build.sh
+# Build & Run:
 
+```c++
+    ./build.sh
+```
