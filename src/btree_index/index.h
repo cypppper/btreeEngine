@@ -316,10 +316,10 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Get(const KeyT& key) -> StatusOr<std::
         if (leaf_get_res.Ok()) {
             auto leaf_case = leaf_get_res.Unwrap();
             if (leaf_case == LeafCase::OK) {
-                std::cout << "leaf get ok\n";
+                // std::cout << "leaf get ok\n";
                 return {std::make_optional(value)};
             } else if (leaf_case == LeafCase::KeyNotFound) {
-                std::cout << std::format("Leaf key not found");
+                // std::cout << std::format("Leaf key not found");
                 return {std::optional<ValueT>{}};
             } else {
                 std::cout << "should not reach here!\n";
@@ -406,10 +406,10 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Remove(const KeyT& key) -> Status {
         if (leaf_get_res.Ok()) {
             auto leaf_case = leaf_get_res.Unwrap();
             if (leaf_case == LeafCase::OK) {
-                std::cout << "root is leaf! remove ok\n";
+                // std::cout << "root is leaf! remove ok\n";
                 return {};
             } else if (leaf_case == LeafCase::KeyNotFound) {
-                std::cout << "root is leaf! key not found\n";
+                // std::cout << "root is leaf! key not found\n";
                 return {};
             } else {
                 std::cout << "should not reach here!\n";
@@ -456,18 +456,18 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Remove(const KeyT& key) -> Status {
         auto internal_remove_case = internal_remove_result.Unwrap();
         if (internal_remove_case == IndexCase::Ok) {
             // remove does not upcast effect
-            std::cout << "root is inner! remove ok! \n";
+            // std::cout << "root is inner! remove ok! \n";
             return {};
         } else if (internal_remove_case == IndexCase::ChildRemoveDidMerge) {
             // check merge
             if (inner_root.GetSize() == 1) {
                 // root is empty, change root.
-                std::cout << "root is inner! change to new root!\n";
+                // std::cout << "root is inner! change to new root!\n";
                 this->root = child_raw_page;
             }
             return {};
         } else if (internal_remove_case == IndexCase::KeyNotFound) {
-            std::cout << "root is inner! key not found\n";
+            // std::cout << "root is inner! key not found\n";
             return {};
         }
         std::cout << "should not reach here!\n";
@@ -485,7 +485,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::RemoveFromInternal(
     auto cur_page_id = reinterpret_cast<BTreePage*>(cur_page->data())->GetPageId();
     
     if (CheckIsLeafPage(cur_page)) {
-        std::cout << "[RemoveFromInternal] (LEAF) on page id : " << cur_page_id << std::endl;
+        // std::cout << "[RemoveFromInternal] (LEAF) on page id : " << cur_page_id << std::endl;
         auto& parent_inner = GetInner(parent_page);
         auto cur_idx_in_parent = parent_inner.GetIdxByPid(cur_page_id);
         assert(cur_idx_in_parent != -1);
@@ -512,7 +512,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::RemoveFromInternal(
         std::cout << "should not reach here!\n";
         exit(-1);
     } else {
-        std::cout << "[RemoveFromInternal] (INNER) on page id : " << cur_page_id << std::endl;
+        // std::cout << "[RemoveFromInternal] (INNER) on page id : " << cur_page_id << std::endl;
         // internal page
         auto& cur_inner = GetInner(cur_page);
         KeyT child_removed_key{};

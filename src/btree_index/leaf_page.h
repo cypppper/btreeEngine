@@ -252,7 +252,7 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Remove(
         auto simbling_raw_page = RawPageMgr::get_page(simbling_pid);
         auto& simbling_leaf = *reinterpret_cast<SelfT*>(simbling_raw_page->data());
 
-        std::cout << std::format("my_page id: {}, simb page_id: {}\n", GetPageId(), simbling_pid);
+        // std::cout << std::format("my_page id: {}, simb page_id: {}\n", GetPageId(), simbling_pid);
         if (simbling_leaf.GetSize() > GetMinSize()){
             // can borrow
 

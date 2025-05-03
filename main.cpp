@@ -12,12 +12,18 @@ using namespace std;
 int constexpr TEST_NUM = 10;
 
 int main() {
-    cout << "\n\nRunning Checks On Btree Index...\n";
+    cout << "\n\n============ START CHECKING BTREE INDEX ==================\n";
+
+
+    cout << "\n\n-----Running [INSERT] Check On Btree Index...--------\n";
     auto idx = Index<int, TestStructA, IntThreeWayCmper>::create();
     for (int i = 0; i < TEST_NUM; i++) {
         auto ret = idx->Insert(i, TestStructA{});
         assert(ret.Ok());
     }
+    cout << "\n\n\t\t [INSERT] Check Passed! \n";
+
+    cout << "\n\n-----Running [UPDATE] Check On Btree Index...--------\n";
 
     for (int i = 0; i < TEST_NUM; i++) {
         auto new_val = TestStructA{};
@@ -25,7 +31,9 @@ int main() {
         auto ret = idx->Update(i, new_val);
         assert(ret.Ok());
     }
+    cout << "\n\n\t\t [UPDATE] Check Passed! \n";
 
+    cout << "\n\n-----Running [GET] Check On Btree Index...--------\n";
     for (int i = 0; i < TEST_NUM; i++) {
         auto ret = idx->Get(i);
         auto result = ret.Unwrap();
@@ -35,21 +43,31 @@ int main() {
         assert(result->a[3] == 'a');
         assert(result->a[4] == '\0');
     }
+    cout << "\n\n\t\t [GET] Check Passed! \n";
 
+    cout << "\n\n-----DUMP Current Btree Structure Into Graphviz Format...--------\n";
     auto cont0 = idx->DumpGraphviz();
     GenerateDot({"dots/dotinit.dot"}, cont0);
+    cout << "\n\n\t\t [DUMP] Finished! \n";
 
-    cout << idx->dump_struct() << endl;
 
+    cout << "\n\n-----Running [DELETE] Check On Btree Index...--------\n";
     for (int i = 0; i < TEST_NUM; i++) {
-        cout << "[remove] " << i << endl;
+        // cout << "[remove] " << i << endl;
         auto ret = idx->Remove(i);
+        ret.Unwrap();
         // cout << idx->dump_struct() << endl;
-        auto cont = idx->DumpGraphviz();
-        GenerateDot(std::format("dots/dot_after_remove_{}.dot", i), cont);
+        // auto cont = idx->DumpGraphviz();
+        // GenerateDot(std::format("dots/dot_after_remove_{}.dot", i), cont);
     }
 
+    for (int i = 0; i < TEST_NUM; i++) {
+        auto ret = idx->Get(i);
+        auto result = ret.Unwrap();
+        assert(!result.has_value());
+    }
+    cout << "\n\n\t\t [DELETE] Check Passed! \n";
 
-    // cout << "All Check Passed!" << endl;
+    cout << "\n\n =============CHECK RESULT: All Check Passed!==============\n\n" << endl;
 }
 
