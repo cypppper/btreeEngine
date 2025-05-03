@@ -10,17 +10,19 @@ add_definitions("-Wall -g")
 
 set(BTREE_INDEX_DIR ${PROJECT_SOURCE_DIR}/src/btree_index)
 set(STATUS_DIR ${PROJECT_SOURCE_DIR}/src/status)
-
+set(GRAPHVIZ_DIR ${PROJECT_SOURCE_DIR}/src/graphviz)
 
 
 include_directories(
     ${PROJECT_SOURCE_DIR}
     ${BTREE_INDEX_DIR}
     ${STATUS_DIR}
+    ${GRAPHVIZ_DIR}
 )
 
 add_subdirectory(${BTREE_INDEX_DIR})
 add_subdirectory(${STATUS_DIR})
+add_subdirectory(${GRAPHVIZ_DIR})
 
 add_executable(${PROJECT_NAME} main.cpp )
 
@@ -28,4 +30,5 @@ target_link_libraries(
     ${PROJECT_NAME}
     btree_index_project
     status_project
+    graphviz_project
 )
