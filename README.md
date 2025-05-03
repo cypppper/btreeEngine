@@ -13,6 +13,10 @@ A Btree Index Storage Engine is a simple storage engine that uses a Btree to sto
     - MacOS
     - Linux
 
+* feature:
+    - \[Graphviz\]: generate btree structure into a dot file (default directory is ./dots)
+        - Example:
+            ![dots_example](./pics/dots_example.png "dots example")
 # Build & Run:
 
 ```c++
