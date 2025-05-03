@@ -9,7 +9,7 @@
 
 using namespace std;
 
-int constexpr TEST_NUM = 10;
+int constexpr TEST_NUM = 40;
 
 int main() {
     cout << "\n\nRunning Checks On Btree Index...\n";

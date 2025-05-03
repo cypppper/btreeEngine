@@ -157,12 +157,12 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::Insert(const KeyT& key, c
     std::copy_backward(
         ge_ite,
         end_ite,
-        end_ite - 1
+        end_ite + 1
     );
     std::copy_backward(
         std::begin(this->pids) + new_idx,
         std::begin(this->pids) + GetSize(),
-        std::begin(this->pids) + GetSize() - 1
+        std::begin(this->pids) + GetSize() + 1
     );
     // insert
     this->pairs[new_idx] = new_pair;
@@ -474,8 +474,9 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::CheckOrBorrowOrMerge(
         auto simbling_pid_idx = (my_pid_idx == parent_inner.GetSize() - 1)? my_pid_idx - 1 : my_pid_idx + 1;
         auto replace_or_merge_pair_idx_in_parent = std::max(my_pid_idx, simbling_pid_idx);
         auto replace_or_merge_pair = parent_inner.ElemAt(replace_or_merge_pair_idx_in_parent);
+        auto simbling_pid = parent_inner.PidAt(simbling_pid_idx);
 
-        auto simbling_raw_page = RawPageMgr::get_page(simbling_pid_idx);
+        auto simbling_raw_page = RawPageMgr::get_page(simbling_pid);
         auto& simbling_inner = *reinterpret_cast<SelfT*>(simbling_raw_page->data());
 
         if (simbling_inner.GetSize() > GetMinSize()){
@@ -596,15 +597,15 @@ void InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::PushBack(KVPidT elem) {
 
 INTERNAL_TEMPLATE_ARGUMENTS
 void InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::PushFront(KVPidT elem) {
-    std::copy(
+    std::copy_backward(
         std::begin(pairs) + 1,
         std::begin(pairs) + GetSize(),
-        std::begin(pairs) + 2
+        std::begin(pairs) + GetSize() + 1
     );
-    std::copy(
+    std::copy_backward(
         std::begin(pids),
         std::begin(pids) + GetSize(),
-        std::begin(pids) + 1
+        std::begin(pids) + GetSize() + 1
     );
 
     this->pairs[1] = std::make_pair(
@@ -635,10 +636,11 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::PopFront() -> KVPidT {
         this->pairs[1].second,
         this->pids[0]
     );
+    this->pairs[1] = std::make_pair(KeyT{}, ValueT{});
     std::copy(
-        std::begin(pairs) + 2,
+        std::begin(pairs) + 1,
         std::begin(pairs) + GetSize(),
-        std::begin(pairs) + 1
+        std::begin(pairs)
     );
     std::copy(
         std::begin(pids) + 1,

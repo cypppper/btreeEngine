@@ -460,7 +460,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Remove(const KeyT& key) -> Status {
             return {};
         } else if (internal_remove_case == IndexCase::ChildRemoveDidMerge) {
             // check merge
-            if (inner_root.GetSize() == 0) {
+            if (inner_root.GetSize() == 1) {
                 // root is empty, change root.
                 std::cout << "root is inner! change to new root!\n";
                 this->root = child_raw_page;
