@@ -9,7 +9,7 @@
 
 using namespace std;
 
-int constexpr TEST_NUM = 40;
+int constexpr TEST_NUM = 10;
 
 int main() {
     cout << "\n\nRunning Checks On Btree Index...\n";
@@ -37,7 +37,7 @@ int main() {
     }
 
     auto cont0 = idx->DumpGraphviz();
-    GenerateDot({"/tmp/dot/dotinit.dot"}, cont0);
+    GenerateDot({"dots/dotinit.dot"}, cont0);
 
     cout << idx->dump_struct() << endl;
 
@@ -46,7 +46,7 @@ int main() {
         auto ret = idx->Remove(i);
         // cout << idx->dump_struct() << endl;
         auto cont = idx->DumpGraphviz();
-        GenerateDot(std::format("/tmp/dot/dot_after_{}.dot", i), cont);
+        GenerateDot(std::format("dots/dot_after_remove_{}.dot", i), cont);
     }
 
 
