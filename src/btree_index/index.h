@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <utility>
 #include <memory>
 #include <cassert>
@@ -37,6 +38,9 @@ public:
     auto Get(const KeyT& key) -> StatusOr<std::optional<ValueT>>;
     auto Remove(const KeyT& key) -> Status;
     auto dump_struct() const -> std::string;
+
+    auto DumpGraphviz() -> std::string;
+
 private:
     static auto InsertFromInternal(std::shared_ptr<Page>& cur_page, const KeyT& key, 
         const ValueT& value, std::shared_ptr<InternalSplitInfoT>& split_info) -> StatusOr<IndexCase>;
@@ -176,7 +180,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::InsertFromInternal(std::shared_ptr<Pag
             return {make_exception<KeyDuplicateException>()};
         } else if (get_pid_case != InternalCase::GetChildPageId) {
             std::cout << "should not reach here!\n";
-            assert(false);
+            exit(-1);
         }
         auto child_pid = std::get<PidT>(get_result);
         auto child_page = RawPageMgr::get_page(child_pid);
@@ -222,12 +226,12 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Update(const KeyT& key, const ValueT& 
                 std::cout << std::format("root is leaf! KeyNotFound\n");
             } else {
                 std::cout << "should not reach here\n";
-                assert(false);
+                exit(-1);
             }
         } else {
             std::cout << "root is leaf! update error!\n";
             leaf_insert_res.Unwrap();
-            assert(false);
+            exit(-1);
         }
         return {};
     } else {
@@ -247,12 +251,12 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Update(const KeyT& key, const ValueT& 
                 // std::cout << std::format("root is internal! KeyNotFound\n");
             } else {
                 std::cout << "should not reach here\n";
-                assert(false);
+                exit(-1);
             }
         } else {
             std::cout << "root is internal! update error!\n";
             internal_update_res.Unwrap();
-            assert(false);
+            exit(-1);
         }
         return {};
     }
@@ -273,7 +277,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::UpdateFromInternal(std::shared_ptr<Pag
             return {IndexCase::KeyNotFound};
         } else {
             std::cout << "should not reach here!\n";
-            assert(false);
+            exit(-1);
         }
     } else {
         // internal page
@@ -292,11 +296,11 @@ auto Index<KeyT, ValueT, KeyComparatorT>::UpdateFromInternal(std::shared_ptr<Pag
                 return {child_insert_case};
             } else {
                 std::cout << "should not reach here!\n";
-                assert(false);
+                exit(-1);
             }
         } else {
             std::cout << "should not reach here!\n";
-            assert(false);
+            exit(-1);
         }
         
     }
@@ -319,7 +323,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Get(const KeyT& key) -> StatusOr<std::
                 return {std::optional<ValueT>{}};
             } else {
                 std::cout << "should not reach here!\n";
-                assert(false);
+                exit(-1);
             }
         } else {
             std::cout << "leaf insert error!\n";
@@ -343,9 +347,8 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Get(const KeyT& key) -> StatusOr<std::
         } else if (iicase == IndexCase::KeyNotFound) {
             return {std::optional<ValueT>{}};
         }
-
         std::cout << "should not reach here!\n";
-        assert(false);
+        exit(-1);
         return {std::optional<ValueT>{}};
     }
 }
@@ -383,11 +386,11 @@ auto Index<KeyT, ValueT, KeyComparatorT>::GetFromInternal(std::shared_ptr<Page>&
                 return {child_insert_case};
             } else {
                 std::cout << "should not reach here!\n";
-                assert(false);
+                exit(-1);
             }
         } else {
             std::cout << "should not reach here!\n";
-            assert(false);
+            exit(-1);
         }
     }
     return {IndexCase::Ok};
@@ -395,7 +398,81 @@ auto Index<KeyT, ValueT, KeyComparatorT>::GetFromInternal(std::shared_ptr<Page>&
 
 INDEX_TEMPLATE_ARGUMENTS
 auto Index<KeyT, ValueT, KeyComparatorT>::Remove(const KeyT& key) -> Status {
+    if (CheckIsLeafPage(this->root)) {
+        auto& leaf_root = GetLeaf(this->root);
+        auto fake_parent = std::shared_ptr<Page>{};
+        KeyT fake_key{};
+        auto leaf_get_res = leaf_root.Remove(key, fake_parent, fake_key, true);
+        if (leaf_get_res.Ok()) {
+            auto leaf_case = leaf_get_res.Unwrap();
+            if (leaf_case == LeafCase::OK) {
+                std::cout << "root is leaf! remove ok\n";
+                return {};
+            } else if (leaf_case == LeafCase::KeyNotFound) {
+                std::cout << "root is leaf! key not found\n";
+                return {};
+            } else {
+                std::cout << "should not reach here!\n";
+                exit(-1);
+            }
+        }
+        std::cout << "leaf remove error!\n";
+        leaf_get_res.Unwrap();
+        exit(-1);
+    } else {
+        // root is internal
+        /*
+            1. find leaf
+            2. insert
+            3. do split if happen
+        */
+        auto& inner_root = GetInner(this->root);
+        KeyT child_removed_key{};
+        PidT child_pid{};
+        auto get_pid_res = inner_root.DowncastRemoveOrGetChildPid(key, child_removed_key, child_pid);
+        auto get_pid_case = get_pid_res.Unwrap();
 
+        std::shared_ptr<Page> child_raw_page;
+        KeyT cur_merged_key{};
+        KeyT new_removed_key{};
+
+
+        if (get_pid_case == InternalCase::RemoveFound) {
+            // downcast effect
+            child_raw_page = RawPageMgr::get_page(child_pid);
+            new_removed_key = child_removed_key;
+        } else if (get_pid_case == InternalCase::GetChildPageId) {
+            // get child pid
+            child_raw_page = RawPageMgr::get_page(child_pid);
+            new_removed_key = key;
+        } else {
+            std::cout << "should not reach here!\n";
+            exit(-1);
+        } 
+        
+
+        auto internal_remove_result = RemoveFromInternal(child_raw_page, this->root,
+            new_removed_key, cur_merged_key);
+        auto internal_remove_case = internal_remove_result.Unwrap();
+        if (internal_remove_case == IndexCase::Ok) {
+            // remove does not upcast effect
+            std::cout << "root is inner! remove ok! \n";
+            return {};
+        } else if (internal_remove_case == IndexCase::ChildRemoveDidMerge) {
+            // check merge
+            if (inner_root.GetSize() == 0) {
+                // root is empty, change root.
+                std::cout << "root is inner! change to new root!\n";
+                this->root = child_raw_page;
+            }
+            return {};
+        } else if (internal_remove_case == IndexCase::KeyNotFound) {
+            std::cout << "root is inner! key not found\n";
+            return {};
+        }
+        std::cout << "should not reach here!\n";
+        exit(-1);
+    }
 }
 
 INDEX_TEMPLATE_ARGUMENTS
@@ -405,11 +482,13 @@ auto Index<KeyT, ValueT, KeyComparatorT>::RemoveFromInternal(
     const KeyT& removed_key,
     KeyT& parent_merged_key
 ) -> StatusOr<IndexCase> {
+    auto cur_page_id = reinterpret_cast<BTreePage*>(cur_page->data())->GetPageId();
+    
     if (CheckIsLeafPage(cur_page)) {
-        auto cur_page_id = reinterpret_cast<BTreePage*>(cur_page->data())->GetPageId();
+        std::cout << "[RemoveFromInternal] (LEAF) on page id : " << cur_page_id << std::endl;
         auto& parent_inner = GetInner(parent_page);
         auto cur_idx_in_parent = parent_inner.GetIdxByPid(cur_page_id);
-
+        assert(cur_idx_in_parent != -1);
         PidT simbling_pid{};
         if (cur_idx_in_parent == parent_inner.GetSize() - 1) {
             simbling_pid = parent_inner.PidAt(cur_idx_in_parent - 1);
@@ -419,7 +498,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::RemoveFromInternal(
         auto simbling_page = RawPageMgr::get_page(simbling_pid);
         // delete in leaf
         auto& cur_leaf = GetLeaf(cur_page);
-        auto leaf_remove_res = cur_leaf.Remove(removed_key, simbling_page, parent_page, parent_merged_key);
+        auto leaf_remove_res = cur_leaf.Remove(removed_key, parent_page, parent_merged_key, false);
         auto leaf_case = leaf_remove_res.Unwrap();
         if (leaf_case == LeafCase::OK) {
             return {IndexCase::Ok};
@@ -429,34 +508,69 @@ auto Index<KeyT, ValueT, KeyComparatorT>::RemoveFromInternal(
             return {IndexCase::Ok};
         } else if (leaf_case == LeafCase::KeyNotFound) {
             return {IndexCase::KeyNotFound};
-        } else {
-            std::cout << "should not reach here!\n";
-            assert(false);
         }
+        std::cout << "should not reach here!\n";
+        exit(-1);
     } else {
+        std::cout << "[RemoveFromInternal] (INNER) on page id : " << cur_page_id << std::endl;
         // internal page
         auto& cur_inner = GetInner(cur_page);
         KeyT child_removed_key{};
         PidT child_pid{};
         auto get_pid_res = cur_inner.DowncastRemoveOrGetChildPid(removed_key, child_removed_key, child_pid);
         auto get_pid_case = get_pid_res.Unwrap();
+        std::shared_ptr<Page> child_raw_page{};
+        KeyT cur_merged_key{};
+        KeyT new_removed_key{};
         if (get_pid_case == InternalCase::RemoveFound) {
             // downcast effect
-            auto child_raw_page = RawPageMgr::get_page(child_pid);
-            KeyT cur_merged_key{};
-            auto internal_remove_result = RemoveFromInternal(child_raw_page, cur_page,
-                 child_removed_key, cur_merged_key);
-            auto internal_remove_case = internal_remove_result.Unwrap();
-            if (internal_remove_case == IndexCase::Ok) {
-                // remove does not upcast effect
-                return {IndexCase::Ok};
-            } else if (internal_remove_case == IndexCase::ChildRemoveDidMerge) {
-                // check merge
-            }
-        } else if (get_pid_case != InternalCase::GetChildPageId) {
+            child_raw_page = RawPageMgr::get_page(child_pid);
+            new_removed_key = child_removed_key;
+        } else if (get_pid_case == InternalCase::GetChildPageId) {
+            // get child pid
+            child_raw_page = RawPageMgr::get_page(child_pid);
+            new_removed_key = removed_key;
+        } else {
             std::cout << "should not reach here!\n";
-            assert(false);
+            exit(-1);
         }
+        auto internal_remove_result = RemoveFromInternal(child_raw_page, cur_page, new_removed_key, cur_merged_key);
+        auto internal_remove_case = internal_remove_result.Unwrap();
+        if (internal_remove_case == IndexCase::Ok) {
+            // remove does not upcast effect
+            return {IndexCase::Ok};
+        } else if (internal_remove_case == IndexCase::ChildRemoveDidMerge) {
+            // check merge
+            auto check_after_remove_res = cur_inner.CheckOrBorrowOrMerge(parent_page);
+            auto check_after_remove_case = check_after_remove_res.Unwrap();
+            if (check_after_remove_case == InternalCase::RemoveDidMerge) {
+                // did merge in cur page
+                return {IndexCase::ChildRemoveDidMerge};
+            }
+            // cur size is safe or did borrow
+            return {IndexCase::Ok};
+        }
+        std::cout << "should not reach here!\n";
+        exit(-1);
     }
     return {IndexCase::Ok};
+}
+
+
+INDEX_TEMPLATE_ARGUMENTS
+auto Index<KeyT, ValueT, KeyComparatorT>::DumpGraphviz() -> std::string {
+    std::stringstream out;
+    out << "digraph BTree {\n";
+    out << "  node [shape=record];\n";
+
+    if (CheckIsLeafPage(this->root)) {
+        auto& leaf = GetLeaf(this->root);
+        out << leaf.DumpNodeGraphviz();
+    } else {
+        auto& inner = GetInner(this->root);
+        out << inner.DumpNodeGraphviz();
+    }
+
+    out << "}\n";
+    return out.str();
 }

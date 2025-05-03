@@ -4,7 +4,7 @@
 #include <format>
 
 struct TestStructA {
-    std::array<char, 300> a;
+    std::array<char, 800> a;
     TestStructA& operator=(const TestStructA& other) {
         std::copy(std::begin(other.a), std::end(other.a), std::begin(this->a));
         return *this;

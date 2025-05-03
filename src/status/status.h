@@ -90,11 +90,18 @@ private:
 };
 
 template <>
-class StatusOr<void> {
+class StatusOr<void>: StatusBase<void> {
 public:
     StatusOr() {}
     StatusOr(std::unique_ptr<std::exception>&& _e): result(std::move(_e)) {}
-    bool Ok() {return result.get() == nullptr;}
+    bool Ok() override {return result.get() == nullptr;}
+    void Unwrap() override {
+        if (Ok()) {
+            return;
+        } else {
+            throw std::runtime_error(std::string(std::format("Exception: {}", this->result->what())));
+        }
+    }
 private:
     std::unique_ptr<std::exception> result;
 };

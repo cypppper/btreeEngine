@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <iostream>
@@ -11,6 +12,7 @@
 #include "common.h"
 #include "btree_page.h"
 #include "../status/status.h"
+#include "index.h"
 
 
 enum class InternalCase: int {
@@ -20,6 +22,7 @@ enum class InternalCase: int {
     InsertSplit,
     RemoveMatchPidNotFound,
     RemoveFound,
+    RemoveDidMerge,
     OK,
 };
 
@@ -29,6 +32,7 @@ class InternalPage: public BTreePage {
     using LeafT = LeafPage<KeyT, ValueT, KeyComparatorT>;
     using SelfT = InternalPage<KeyT, ValueT, PidT, KeyComparatorT>;
     using PairT = std::pair<KeyT, ValueT>;
+    using KVPidT = std::tuple<KeyT, ValueT, PidT>;
     using InternalSplitInfoT = SplitInfo<KeyT, ValueT>;
 
 
@@ -84,23 +88,37 @@ public:
         PidT& child_pid
     ) -> StatusOr<InternalCase>;
 
+    auto CheckOrBorrowOrMerge(
+        std::shared_ptr<Page>& parent
+    ) -> StatusOr<InternalCase>;
+
     auto GetPidMatchElem(const PairT& elem, PidT& result) const -> StatusOr<InternalCase>;
 
     auto dump_struct() const -> std::string;
 
     auto RemoveFirst() -> std::pair<PairT, PidT>;
 
-    auto GetIdxByPid(PidT pid) const -> int;
-
     auto ElemAt(int idx) const -> PairT;
 
     auto PidAt(int idx) const -> PidT;
 
-    void SetElemAt(int idx, PairT new_elem);
+    auto GetIdxByPid(PidT pid) const -> int;
+
+    void SetPairAt(int idx, PairT new_elem);
 
     void RemoveElemAndPidAt(int idx);
 
+    void SetElemPairAt(int idx, PairT p);
+
+    auto GetFirstElem() const -> PairT;
+
+    auto DumpNodeGraphviz() const -> std::string;
+
 private:
+    void PushBack(KVPidT elem);
+    void PushFront(KVPidT elem);
+    auto PopBack() -> KVPidT;
+    auto PopFront() -> KVPidT;
     static auto GetRawPageFirstElem(const std::shared_ptr<Page>& raw_page) -> PairT;
 
     // first key is invalid!
@@ -139,12 +157,12 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::Insert(const KeyT& key, c
     std::copy_backward(
         ge_ite,
         end_ite,
-        ge_ite + 1
+        end_ite - 1
     );
     std::copy_backward(
         std::begin(this->pids) + new_idx,
         std::begin(this->pids) + GetSize(),
-        std::begin(this->pids) + new_idx + 1
+        std::begin(this->pids) + GetSize() - 1
     );
     // insert
     this->pairs[new_idx] = new_pair;
@@ -421,7 +439,6 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::DowncastRemoveOrGetChildP
     auto child_raw_page = RawPageMgr::get_page(pid);
     auto child_first_elem = GetRawPageFirstElem(child_raw_page);
     auto child_first_key = child_first_elem.first;
-    auto child_first_val = child_first_elem.second;
     this->pairs[pos_idx] = child_first_elem;
     child_pid = pid;
     child_removed_key = child_first_key;
@@ -437,9 +454,256 @@ INTERNAL_TEMPLATE_ARGUMENTS
 auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::GetRawPageFirstElem(const std::shared_ptr<Page>& raw_page) -> PairT {
     if (CheckIsLeafPage(raw_page)) {
         auto& leaf = *reinterpret_cast<LeafT*>(raw_page->data());
-        return leaf->GetFirstElem();
+        return leaf.GetFirstElem();
     } else {
         auto& inner = *reinterpret_cast<SelfT*>(raw_page->data());
         return inner.GetFirstElem();
     }
+}
+
+
+INTERNAL_TEMPLATE_ARGUMENTS
+auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::CheckOrBorrowOrMerge(
+    std::shared_ptr<Page>& parent
+) -> StatusOr<InternalCase> {
+    if (GetSize() < GetMinSize()) {
+        // need borrow or merge
+        auto& parent_inner = *reinterpret_cast<SelfT*>(parent->data());
+        auto my_pid_idx = parent_inner.GetIdxByPid(GetPageId());
+        assert(my_pid_idx != -1);
+        auto simbling_pid_idx = (my_pid_idx == parent_inner.GetSize() - 1)? my_pid_idx - 1 : my_pid_idx + 1;
+        auto replace_or_merge_pair_idx_in_parent = std::max(my_pid_idx, simbling_pid_idx);
+        auto replace_or_merge_pair = parent_inner.ElemAt(replace_or_merge_pair_idx_in_parent);
+
+        auto simbling_raw_page = RawPageMgr::get_page(simbling_pid_idx);
+        auto& simbling_inner = *reinterpret_cast<SelfT*>(simbling_raw_page->data());
+
+        if (simbling_inner.GetSize() > GetMinSize()){
+            // can borrow
+
+            // if simbling idx > my idx, move parent to last
+            // else move parent elem to first
+            if (my_pid_idx == simbling_pid_idx - 1) {
+                auto sim_front_tuple = simbling_inner.PopFront();
+                auto k_v_pid_tuple = std::make_tuple(
+                    replace_or_merge_pair.first, 
+                    replace_or_merge_pair.second, 
+                    std::get<2>(sim_front_tuple)
+                );
+
+                PushBack(k_v_pid_tuple);
+
+                parent_inner.SetPairAt(
+                    replace_or_merge_pair_idx_in_parent, 
+                    std::make_pair(
+                        std::get<0>(sim_front_tuple),
+                        std::get<1>(sim_front_tuple)
+                    )
+                );
+            } else {
+                assert(my_pid_idx == simbling_pid_idx + 1);
+                auto sim_back_tuple = simbling_inner.PopBack();
+                auto k_v_pid_tuple = std::make_tuple(
+                    replace_or_merge_pair.first, 
+                    replace_or_merge_pair.second, 
+                    std::get<2>(sim_back_tuple)
+                );
+                PushFront(k_v_pid_tuple);
+                parent_inner.SetPairAt(
+                    replace_or_merge_pair_idx_in_parent, 
+                    std::make_pair(
+                        std::get<0>(sim_back_tuple),
+                        std::get<1>(sim_back_tuple)
+                    )
+                );
+            }
+            return {InternalCase::OK};
+        } else {
+            // merge with simbling
+            auto merger_idx = std::min(my_pid_idx, simbling_pid_idx);
+            SelfT* merger_inner_ptr, *mergee_inner_ptr;
+            if (merger_idx == my_pid_idx) {
+                merger_inner_ptr = this;
+                mergee_inner_ptr = &simbling_inner;
+            } else {
+                merger_inner_ptr = &simbling_inner;
+                mergee_inner_ptr = this;
+            }
+            auto& merger_inner = *reinterpret_cast<SelfT*>(merger_inner_ptr);
+            auto& mergee_inner = *reinterpret_cast<SelfT*>(mergee_inner_ptr);
+            // copy parent borrow elem to merger
+            auto mergee_first_pid = mergee_inner.PidAt(0);
+            auto kvp_tp = std::make_tuple(replace_or_merge_pair.first, replace_or_merge_pair.second, mergee_first_pid);
+            merger_inner.PushBack(kvp_tp);
+            parent_inner.RemoveElemAndPidAt(replace_or_merge_pair_idx_in_parent);
+            // copy mergee to merger
+            std::copy(
+                std::begin(mergee_inner.pairs) + 1,
+                std::begin(mergee_inner.pairs) + mergee_inner.GetSize(),
+                std::begin(merger_inner.pairs) + merger_inner.GetSize()
+            );
+            std::copy(
+                std::begin(mergee_inner.pids) + 1,
+                std::begin(mergee_inner.pids) + mergee_inner.GetSize(),
+                std::begin(merger_inner.pids) + merger_inner.GetSize()
+            );
+            ChangeSizeBy(mergee_inner.GetSize() - 1);
+            return {InternalCase::RemoveDidMerge};
+        }
+    }
+    // get size > min_size
+    return {InternalCase::OK};
+}
+
+
+INTERNAL_TEMPLATE_ARGUMENTS
+void InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::RemoveElemAndPidAt(int idx) {
+    if (idx + 1 != GetSize()) {
+        std::copy(
+            std::begin(pairs) + idx + 1,
+            std::begin(pairs) + GetSize(),
+            std::begin(pairs) + idx
+        );
+        std::copy(
+            std::begin(pids) + idx + 1,
+            std::begin(pids) + GetSize(),
+            std::begin(pids) + idx
+        );
+    }
+    ChangeSizeBy(-1);
+}
+
+
+INTERNAL_TEMPLATE_ARGUMENTS
+void InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::SetElemPairAt(int idx, PairT p) {
+    this->pairs[idx] = p;
+}
+
+INTERNAL_TEMPLATE_ARGUMENTS
+auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::GetFirstElem() const -> PairT {
+    return this->pairs[1];
+}
+
+INTERNAL_TEMPLATE_ARGUMENTS
+void InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::PushBack(KVPidT elem) {
+    this->pairs[GetSize()] = std::make_pair(
+        std::get<0>(elem),
+        std::get<1>(elem)
+    );
+    this->pids[GetSize()] = std::get<2>(elem);
+    ChangeSizeBy(1);
+}
+
+INTERNAL_TEMPLATE_ARGUMENTS
+void InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::PushFront(KVPidT elem) {
+    std::copy(
+        std::begin(pairs) + 1,
+        std::begin(pairs) + GetSize(),
+        std::begin(pairs) + 2
+    );
+    std::copy(
+        std::begin(pids),
+        std::begin(pids) + GetSize(),
+        std::begin(pids) + 1
+    );
+
+    this->pairs[1] = std::make_pair(
+        std::get<0>(elem),
+        std::get<1>(elem)
+    );
+    this->pids[0] = std::get<2>(elem);
+    ChangeSizeBy(1);
+}
+
+
+INTERNAL_TEMPLATE_ARGUMENTS
+auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::PopBack() -> KVPidT {
+    auto ret = std::make_tuple(
+        this->pairs[GetSize() - 1].first,
+        this->pairs[GetSize() - 1].second,
+        this->pids[GetSize() - 1]
+    );
+    ChangeSizeBy(-1);
+    return ret;
+}
+
+
+INTERNAL_TEMPLATE_ARGUMENTS
+auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::PopFront() -> KVPidT {
+    auto ret = std::make_tuple(
+        this->pairs[1].first,
+        this->pairs[1].second,
+        this->pids[0]
+    );
+    std::copy(
+        std::begin(pairs) + 2,
+        std::begin(pairs) + GetSize(),
+        std::begin(pairs) + 1
+    );
+    std::copy(
+        std::begin(pids) + 1,
+        std::begin(pids) + GetSize(),
+        std::begin(pids)
+    );
+
+    ChangeSizeBy(-1);
+    return ret;
+}
+
+INTERNAL_TEMPLATE_ARGUMENTS
+auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::ElemAt(int idx) const -> PairT {
+    return this->pairs[idx];
+}
+
+INTERNAL_TEMPLATE_ARGUMENTS
+auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::PidAt(int idx) const -> PidT {
+    return this->pids[idx];
+}
+
+INTERNAL_TEMPLATE_ARGUMENTS
+auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::GetIdxByPid(PidT pid) const -> int {
+    for (int i = 0; i < GetSize(); i++) {
+        if (this->pids[i] == pid) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+INTERNAL_TEMPLATE_ARGUMENTS
+void InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::SetPairAt(int idx, PairT new_elem) {
+    this->pairs[idx] = new_elem;
+}
+
+
+
+INTERNAL_TEMPLATE_ARGUMENTS
+auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::DumpNodeGraphviz() const -> std::string {
+    std::stringstream out;
+    out << "  node" << GetPageId() << " [label=\"";
+    for (int i = 0; i < GetSize(); ++i) {
+        if (i > 0) 
+        {
+            out << "|";
+            out << "<f" << i << "> " << this->pairs[i].first;
+        } else {
+            out << "<f" << 0 << "> -" ;
+        }
+    }
+    out << "\"];\n";
+
+    for (int i = 0; i < GetSize(); ++i) {
+        int child_id = pids[i];
+        auto raw_page = RawPageMgr::get_page(child_id);
+        if (CheckIsLeafPage(raw_page)) {
+            auto& leaf = *reinterpret_cast<LeafT*>(raw_page->data());
+            out << leaf.DumpNodeGraphviz();
+        } else {
+            auto& inner = *reinterpret_cast<SelfT*>(raw_page->data());
+            out << inner.DumpNodeGraphviz();
+        }
+        out << "  node" << GetPageId() << ":f" << i << " -> node" << child_id << ";\n";
+    }
+
+    return out.str();
 }

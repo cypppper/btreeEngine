@@ -1,12 +1,14 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cstring>
 #include <exception>
 #include <format>
 #include <string>
 #include <utility>
 #include <iostream>
+#include <sstream>
 
 
 #include "common.h"
@@ -58,12 +60,13 @@ public:
     auto Get(const KeyT& key, ValueT& result) const -> StatusOr<LeafCase>;
     auto Remove(
         const KeyT& key, 
-        std::shared_ptr<Page>& simbling, 
         std::shared_ptr<Page>& parent,
-        KeyT& parent_merged_key
+        KeyT& parent_merged_key,
+        bool is_root
     ) -> StatusOr<LeafCase>;
     auto dump_struct() const -> std::string;
     auto GetFirstElem() const -> PairT;
+    auto DumpNodeGraphviz() const -> std::string;
 };
 
 
@@ -97,12 +100,12 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const Value
     std::copy_backward(
         ge_ite,
         end_ite,
-        ge_ite + 1
+        end_ite - 1
     );
     std::copy_backward(
         std::begin(this->vals) + new_idx,
         std::begin(this->vals) + GetSize(),
-        std::begin(this->vals) + new_idx + 1
+        std::begin(this->vals) + GetSize() - 1
     );
     // insert
     this->keys[new_idx] = key;
@@ -196,10 +199,10 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Get(const KeyT& key, ValueT& result
 LEAF_TEMPLATE_ARGUMENTS
 auto LeafPage<KeyT, ValueT, KeyComparatorT>::Remove(
     const KeyT& key, 
-    std::shared_ptr<Page>& simbling, 
     std::shared_ptr<Page>& parent,
-    KeyT& parent_merged_key
-) -> StatusOr<LeafCase>{
+    KeyT& parent_merged_key,
+    bool is_root
+) -> StatusOr<LeafCase> {
     /*
         remove kv in page
         1. find pos of key
@@ -227,44 +230,49 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Remove(
     std::copy_backward(
         ge_ite + 1,
         end_ite,
-        ge_ite
+        end_ite - 1
     );
     std::copy_backward(
         std::begin(this->vals) + new_idx + 1,
         std::begin(this->vals) + GetSize(),
-        std::begin(this->vals) + new_idx
+        std::begin(this->vals) + GetSize() - 1
     );
     ChangeSizeBy(-1);
 
     // 4. if less than min_size, merge
-    if (GetSize() < GetMinSize()) {
-        auto& simbling_leaf = *reinterpret_cast<SelfT*>(simbling->data());
+    if (!is_root && GetSize() < GetMinSize()) {
         auto& parent_inner = *reinterpret_cast<InternalT*>(parent->data());
         auto my_pid_idx = parent_inner.GetIdxByPid(GetPageId());
-        auto simbling_pid_idx = parent_inner.GetIdxByPid(simbling_leaf.GetPageId());
+        assert(my_pid_idx != -1);
+        auto simbling_pid_idx = (my_pid_idx == parent_inner.GetSize() - 1)? my_pid_idx - 1 : my_pid_idx + 1;
         auto borrow_elem_idx_in_parent = std::max(my_pid_idx, simbling_pid_idx);
         auto borrow_parent_elem = parent_inner.ElemAt(borrow_elem_idx_in_parent);
+        auto simbling_pid = parent_inner.PidAt(simbling_pid_idx);
+
+        auto simbling_raw_page = RawPageMgr::get_page(simbling_pid);
+        auto& simbling_leaf = *reinterpret_cast<SelfT*>(simbling_raw_page->data());
+
+        std::cout << std::format("my_page id: {}, simb page_id: {}", GetPageId(), simbling_pid);
         if (simbling_leaf.GetSize() > GetMinSize()){
             // can borrow
-            
+
             // if simbling idx > my idx, move parent to last
             // else move parent elem to first
             PairT borrow_elem_simbling{};
             if (my_pid_idx == simbling_pid_idx - 1) {
                 PushBack(borrow_parent_elem);
                 borrow_elem_simbling = simbling_leaf.PopFront();
-                parent_inner.SetElemAt(borrow_elem_idx_in_parent, borrow_elem_simbling);
+                parent_inner.SetElemPairAt(borrow_elem_idx_in_parent, borrow_elem_simbling);
             } else {
                 assert(my_pid_idx == simbling_pid_idx + 1);
                 PushFront(borrow_parent_elem);
                 borrow_elem_simbling = simbling_leaf.PopBack();
-                parent_inner.SetElemAt(borrow_elem_idx_in_parent, borrow_elem_simbling);
+                parent_inner.SetElemPairAt(borrow_elem_idx_in_parent, borrow_elem_simbling);
             }
             return {LeafCase::DidBorrow};
         } else {
             // merge with simbling
             auto merger_idx = std::min(my_pid_idx, simbling_pid_idx);
-            auto mergee_idx = std::max(my_pid_idx, simbling_pid_idx);
             SelfT* merger_leaf_ptr, *mergee_leaf_ptr;
             if (merger_idx == my_pid_idx) {
                 merger_leaf_ptr = this;
@@ -319,7 +327,7 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::dump_struct() const -> std::string 
 
 LEAF_TEMPLATE_ARGUMENTS
 auto LeafPage<KeyT, ValueT, KeyComparatorT>::GetFirstElem() const -> PairT {
-    return std::make_pair<KeyT, ValueT>(this->keys[0], this->vals[0]);
+    return std::make_pair(this->keys[0], this->vals[0]);
 }
 
 LEAF_TEMPLATE_ARGUMENTS
@@ -334,12 +342,12 @@ void LeafPage<KeyT, ValueT, KeyComparatorT>::PushFront(PairT elem) {
     std::copy_backward(
         std::begin(this->keys),
         std::begin(this->keys) + GetSize(),
-        std::begin(this->keys) + 1 
+        std::begin(this->keys) + GetSize() - 1
     );
     std::copy_backward(
         std::begin(this->vals),
         std::begin(this->vals) + GetSize(),
-        std::begin(this->vals) + 1 
+        std::begin(this->vals) + GetSize() - 1
     );
     this->keys[0] = elem.first;
     this->vals[0] = elem.second;
@@ -349,7 +357,7 @@ void LeafPage<KeyT, ValueT, KeyComparatorT>::PushFront(PairT elem) {
 LEAF_TEMPLATE_ARGUMENTS
 auto LeafPage<KeyT, ValueT, KeyComparatorT>::PopBack() -> PairT {
     ChangeSizeBy(-1);
-    return std::make_pair<KeyT, ValueT>(
+    return std::make_pair(
         this->keys[GetSize()],
         this->vals[GetSize()]
     );
@@ -357,21 +365,33 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::PopBack() -> PairT {
 
 LEAF_TEMPLATE_ARGUMENTS
 auto LeafPage<KeyT, ValueT, KeyComparatorT>::PopFront() -> PairT {
-    auto res = std::make_pair<KeyT, ValueT>(
+    auto res = std::make_pair(
         this->keys[0],
         this->vals[0]
     );
     std::copy_backward(
         std::begin(this->keys) + 1,
         std::begin(this->keys) + GetSize(),
-        std::begin(this->keys) 
+        std::begin(this->keys) + GetSize() - 1 
     );
     std::copy_backward(
         std::begin(this->vals) + 1,
         std::begin(this->vals) + GetSize(),
-        std::begin(this->vals) 
+        std::begin(this->vals) + GetSize() - 1
     );
     ChangeSizeBy(-1);
     return res;
 }
 
+
+LEAF_TEMPLATE_ARGUMENTS
+auto LeafPage<KeyT, ValueT, KeyComparatorT>::DumpNodeGraphviz() const -> std::string {
+    std::stringstream out;
+    out << "  node" << GetPageId() << " [label=\"";
+    for (int i = 0; i < GetSize(); ++i) {
+        if (i > 0) out << "|";
+        out << "<f" << i << "> " << this->keys[i];
+    }
+    out << "\"];\n";
+    return out.str();
+}
