@@ -53,12 +53,8 @@ int main() {
 
     cout << "\n\n-----Running [DELETE] Check On Btree Index...--------\n";
     for (int i = 0; i < TEST_NUM; i++) {
-        // cout << "[remove] " << i << endl;
         auto ret = idx->Remove(i);
         ret.Unwrap();
-        // cout << idx->dump_struct() << endl;
-        // auto cont = idx->DumpGraphviz();
-        // GenerateDot(std::format("dots/dot_after_remove_{}.dot", i), cont);
     }
 
     for (int i = 0; i < TEST_NUM; i++) {

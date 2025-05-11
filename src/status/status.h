@@ -6,7 +6,8 @@
 #include <variant>
 #include <string>
 #include <memory>
-#include <format>
+
+#include "fmt/core.h"
 
 namespace visitor{
 template<class... Ts>
@@ -81,7 +82,7 @@ public:
         if (Ok()) {
             return std::get<T>(this->result);
         } else {
-            throw std::runtime_error(std::string(std::format("Exception: {}", std::get<std::unique_ptr<std::exception>>(this->result)->what())));
+            throw std::runtime_error(std::string(fmt::format("Exception: {}", std::get<std::unique_ptr<std::exception>>(this->result)->what())));
         }
     }
     
@@ -99,7 +100,7 @@ public:
         if (Ok()) {
             return;
         } else {
-            throw std::runtime_error(std::string(std::format("Exception: {}", this->result->what())));
+            throw std::runtime_error(std::string(fmt::format("Exception: {}", this->result->what())));
         }
     }
 private:

@@ -252,20 +252,20 @@ void InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::SetInitialState(PairT fir
 INTERNAL_TEMPLATE_ARGUMENTS
 auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::dump_struct() const -> std::string {
     std::string ret{};
-    ret += std::format("------------------- [INNER] page pid: {} -----------------\n", GetPageId());
+    ret += fmt::format("------------------- [INNER] page pid: {} -----------------\n", GetPageId());
     ret += "children pid: ";
     for (int i = 0; i < GetSize(); i++) {
-        ret += std::format("{}, ", this->pids[i]);
+        ret += fmt::format("{}, ", this->pids[i]);
     }
     ret += "\n";
     ret += "values: ";
     for (int i = 0; i < GetSize(); i++) {
-        ret += std::format("{}, ", this->pairs[i].second.dump_struct());
+        ret += fmt::format("{}, ", this->pairs[i].second.dump_struct());
     }
     ret += "\n";
     for (int i = 0; i < GetSize(); i++) {
-        ret += std::format("[Inner] key: {}, ", this->pairs[i].first)
-            += std::format("child: {} pid: {} ", i, this->pids[i]);
+        ret += fmt::format("[Inner] key: {}, ", this->pairs[i].first)
+            += fmt::format("child: {} pid: {} ", i, this->pids[i]);
         auto pid = this->pids[i];
         auto page = RawPageMgr::get_page(pid);
         if (CheckIsLeafPage(page)) {
@@ -383,7 +383,6 @@ auto InternalPage<KeyT, ValueT, PidT, KeyComparatorT>::DoUpdateOrGetChild(const 
         auto pos_idx = new_idx;
         auto& pair = this->pairs[pos_idx];
         pair.second = new_val;
-        // std::cout << std::format("[internal update] find key in internal page pid:{} ge_ite: {}, search_pair: {}\n", GetPageId(), ge_ite->first, search_pair.first);
         return {InternalCase::OK};
     }
 

@@ -10,10 +10,10 @@
 #include <iostream>
 #include <optional>
 #include <sstream>
-#include <utility>
 #include <memory>
 #include <cassert>
 #include <variant>
+#include <shared_mutex>
 
 enum class IndexCase: int {
     Ok,
@@ -38,7 +38,6 @@ public:
     auto Get(const KeyT& key) -> StatusOr<std::optional<ValueT>>;
     auto Remove(const KeyT& key) -> Status;
     auto dump_struct() const -> std::string;
-
     auto DumpGraphviz() -> std::string;
 
 private:
@@ -56,6 +55,7 @@ private:
     static auto GetInner(std::shared_ptr<Page>& ptr) -> InternalT&;
     static auto DoBorrowOrMerge(std::shared_ptr<Page>& me, std::shared_ptr<Page>& parent, KeyT& del_key_in_parent) -> StatusOr<IndexCase>;
     std::shared_ptr<Page> root;
+    std::shared_mutex rw_lock;
 };
 
 INDEX_TEMPLATE_ARGUMENTS
@@ -71,6 +71,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::GetInner(std::shared_ptr<Page>& ptr) -
 
 INDEX_TEMPLATE_ARGUMENTS
 auto Index<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const ValueT& val) -> Status {
+    std::unique_lock guard(this->rw_lock);
     // std::cout << "root addr: " << (void *)this->root.get() << std::endl;
     if (CheckIsLeafPage(this->root)) {
         auto& leaf_root = GetLeaf(this->root);
@@ -81,7 +82,6 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const ValueT& 
             if (leaf_case == LeafCase::OK) {
                 // std::cout << "leaf insert ok\n";
             } else if (leaf_case == LeafCase::SplitPage) {
-                // std::cout << std::format("Leaf Split when key = {}\n", key);
                 // split
                 assert(leaf_split_info.get() != nullptr);
                 auto new_root_page = RawPageMgr::create();
@@ -113,7 +113,6 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const ValueT& 
                 // std::cout << "insert ok in internal insert\n";
                 return {};
             } else if (iicase == IndexCase::ChildInsertPageSplit) {
-                // std::cout << std::format("internal split at key: {}", old_root_split_info->mid_elem.first);
                 assert(old_root_split_info.get() != nullptr);
                 auto new_root_page = RawPageMgr::create();
                 auto& inner_new_root = GetInner(new_root_page);
@@ -131,6 +130,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Insert(const KeyT& key, const ValueT& 
 
 INDEX_TEMPLATE_ARGUMENTS
 auto Index<KeyT, ValueT, KeyComparatorT>::dump_struct() const -> std::string {
+    std::shared_lock guard(this->rw_lock);
     if (CheckIsLeafPage(this->root)) {
         auto btree_page = reinterpret_cast<LeafT*>(this->root->data());
         return btree_page->dump_struct();
@@ -214,6 +214,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::InsertFromInternal(std::shared_ptr<Pag
 INDEX_TEMPLATE_ARGUMENTS
 auto Index<KeyT, ValueT, KeyComparatorT>::Update(const KeyT& key, const ValueT& new_val) -> Status {
     // std::cout << "root addr: " << (void *)this->root.get() << std::endl;
+    std::unique_lock guard(this->rw_lock);
     if (CheckIsLeafPage(this->root)) {
         auto& leaf_root = GetLeaf(this->root);
         auto leaf_split_info = std::make_shared<LeafSplitInfoT>();
@@ -223,7 +224,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Update(const KeyT& key, const ValueT& 
             if (leaf_case == LeafCase::OK) {
                 std::cout << "root is leaf! update ok\n";
             } else if (leaf_case == LeafCase::KeyNotFound) {
-                std::cout << std::format("root is leaf! KeyNotFound\n");
+                std::cout << fmt::format("root is leaf! KeyNotFound\n");
             } else {
                 std::cout << "should not reach here\n";
                 exit(-1);
@@ -248,7 +249,6 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Update(const KeyT& key, const ValueT& 
             if (iucase == IndexCase::Ok) {
                 // std::cout << "root is internal! update ok\n";
             } else if (iucase == IndexCase::KeyNotFound) {
-                // std::cout << std::format("root is internal! KeyNotFound\n");
             } else {
                 std::cout << "should not reach here\n";
                 exit(-1);
@@ -309,6 +309,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::UpdateFromInternal(std::shared_ptr<Pag
 
 INDEX_TEMPLATE_ARGUMENTS
 auto Index<KeyT, ValueT, KeyComparatorT>::Get(const KeyT& key) -> StatusOr<std::optional<ValueT>> {
+    std::shared_lock guard(this->rw_lock);
     if (CheckIsLeafPage(this->root)) {
         auto& leaf_root = GetLeaf(this->root);
         ValueT value{};
@@ -319,7 +320,6 @@ auto Index<KeyT, ValueT, KeyComparatorT>::Get(const KeyT& key) -> StatusOr<std::
                 // std::cout << "leaf get ok\n";
                 return {std::make_optional(value)};
             } else if (leaf_case == LeafCase::KeyNotFound) {
-                // std::cout << std::format("Leaf key not found");
                 return {std::optional<ValueT>{}};
             } else {
                 std::cout << "should not reach here!\n";
@@ -398,6 +398,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::GetFromInternal(std::shared_ptr<Page>&
 
 INDEX_TEMPLATE_ARGUMENTS
 auto Index<KeyT, ValueT, KeyComparatorT>::Remove(const KeyT& key) -> Status {
+    std::unique_lock guard(this->rw_lock);
     if (CheckIsLeafPage(this->root)) {
         auto& leaf_root = GetLeaf(this->root);
         auto fake_parent = std::shared_ptr<Page>{};
@@ -559,6 +560,7 @@ auto Index<KeyT, ValueT, KeyComparatorT>::RemoveFromInternal(
 
 INDEX_TEMPLATE_ARGUMENTS
 auto Index<KeyT, ValueT, KeyComparatorT>::DumpGraphviz() -> std::string {
+    std::shared_lock guard(this->rw_lock);
     std::stringstream out;
     out << "digraph BTree {\n";
     out << "  node [shape=record];\n";

@@ -4,7 +4,6 @@
 #include <cassert>
 #include <cstring>
 #include <exception>
-#include <format>
 #include <string>
 #include <utility>
 #include <iostream>
@@ -252,7 +251,6 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Remove(
         auto simbling_raw_page = RawPageMgr::get_page(simbling_pid);
         auto& simbling_leaf = *reinterpret_cast<SelfT*>(simbling_raw_page->data());
 
-        // std::cout << std::format("my_page id: {}, simb page_id: {}\n", GetPageId(), simbling_pid);
         if (simbling_leaf.GetSize() > GetMinSize()){
             // can borrow
 
@@ -308,18 +306,18 @@ auto LeafPage<KeyT, ValueT, KeyComparatorT>::Remove(
 
 LEAF_TEMPLATE_ARGUMENTS
 auto LeafPage<KeyT, ValueT, KeyComparatorT>::dump_struct() const -> std::string {
-    auto ret = std::format("total size: {}\nslot cnt: {}\nkeyT size: {}\nvalT size: {}\nkeys size: {}\nvals size {}\n"
+    auto ret = fmt::format("total size: {}\nslot cnt: {}\nkeyT size: {}\nvalT size: {}\nkeys size: {}\nvals size {}\n"
                             "header size: {}\n",
                             sizeof(LeafPage<KeyT, ValueT, KeyComparatorT>), SLOT_CNT,
                             sizeof(KeyT), sizeof(ValueT),
                             sizeof(this->keys), sizeof(this->vals),
                             LEAF_PAGE_HEADER_SIZE
                         )
-        + std::format("start_pos: {}, key pos: {}, vals pos:{} end pos: {}\n",
+        + fmt::format("start_pos: {}, key pos: {}, vals pos:{} end pos: {}\n",
                         (void*)this, (void*)&this->keys[0], (void*)&this->vals[0], (void*)((char*)this + sizeof(*this))
                     );
     for (int i = 0; i < GetSize(); i++) {
-        ret += std::format("key: {}, val: {}\n", this->keys[i], this->vals[i].dump_struct());
+        ret += fmt::format("key: {}, val: {}\n", this->keys[i], this->vals[i].dump_struct());
     }
     return ret;
 }

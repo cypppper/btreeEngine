@@ -1,7 +1,7 @@
 #pragma once
 
 #include <array>
-#include <format>
+#include "fmt/format.h"
 
 struct TestStructA {
     std::array<char, 800> a;
@@ -21,4 +21,19 @@ struct IntThreeWayCmper {
     }
 };
 
+
+template<>
+struct fmt::formatter<TestStructA> {
+    constexpr auto parse(format_parse_context &ctx) -> decltype(ctx.begin())
+    {
+        return ctx.begin();
+    }
+
+    template <typename FormatContext>
+    auto format(const TestStructA & ts, FormatContext &ctx) const -> decltype(ctx.out())
+    {
+        fmt::format_to(ctx.out(), "TestStructA({}) \n", ts.dump_struct());
+        return ctx.out();
+    }
+};
 
