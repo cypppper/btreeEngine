@@ -32,7 +32,7 @@ struct fmt::formatter<TestStructA> {
     template <typename FormatContext>
     auto format(const TestStructA & ts, FormatContext &ctx) const -> decltype(ctx.out())
     {
-        fmt::format_to(ctx.out(), "TestStructA({}) \n", ts.dump_struct());
+        fmt::format_to(ctx.out(), "TestStructA ( {} )", ts.dump_struct());
         return ctx.out();
     }
 };

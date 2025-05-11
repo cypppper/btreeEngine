@@ -20,7 +20,7 @@ int main() {
 
     for (int i = 0; i < TEST_NUM; i++) {
         auto new_val = TestStructA{};
-        new_val.a = {'h', 'a', 'h', 'a', '\0'};
+        new_val.a = {'t', 'e', 's', 't', char('0' + i), '\0'};
         auto factory_op = factory.make_op<OPTYPE::UPDATE>(idx, i, new_val);
         factory_op();
     }
