@@ -32,7 +32,7 @@ class Index {
     using InternalSplitInfoT = SplitInfo<KeyT, ValueT>;
 public:
     Index() = default;
-    static auto create() -> std::unique_ptr<SelfT>;
+    static auto create() -> std::shared_ptr<SelfT>;
     auto Insert(const KeyT& key, const ValueT& val) -> Status;
     auto Update(const KeyT& key, const ValueT& new_val) -> Status;
     auto Get(const KeyT& key) -> StatusOr<std::optional<ValueT>>;
@@ -141,8 +141,8 @@ auto Index<KeyT, ValueT, KeyComparatorT>::dump_struct() const -> std::string {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto Index<KeyT, ValueT, KeyComparatorT>::create() -> std::unique_ptr<SelfT> {
-    auto idx = std::make_unique<SelfT>();
+auto Index<KeyT, ValueT, KeyComparatorT>::create() -> std::shared_ptr<SelfT> {
+    auto idx = std::make_shared<SelfT>();
     idx->root = RawPageMgr::create();
     auto& root_leaf = GetLeaf(idx->root);
     root_leaf.Init();
