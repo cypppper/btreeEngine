@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <iostream>
 #include <cstddef>
-#include <compare>
 #include <cassert>
 #include "src/btree_index/index.h"
 #include "src/format/custom_struct.h"
