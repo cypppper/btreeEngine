@@ -32,6 +32,10 @@ int main() {
         cout << fmt::format("{}\n", res.value());
     }
 
+    auto cont0 = idx->DumpGraphviz();
+    cout << fmt::format("generated dots/dotexample.dot successfully!\n");
+    GenerateDot({"dots/dotexample.dot"}, cont0);
+
     for (int i = 0; i < TEST_NUM; i++) {
         auto factory_op = factory.make_op<OPTYPE::REMOVE>(idx, i);
         factory_op();
